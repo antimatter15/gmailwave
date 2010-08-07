@@ -1,0 +1,107 @@
+<!--
+  Copyright 2010 Google
+
+  Licensed under the Apache License, Version 2.0 (the "License"); you may not
+  use this file except in compliance with the License. You may obtain a copy of
+  the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+  License for the specific language governing permissions and limitations under
+  the License.
+
+  Brian Kennish <byoogle@google.com>
+-->
+<script src="chrome_ex_oauthsimple.js"></script>
+<script src="chrome_ex_oauth.js"></script>
+<script src="prettyload.js"></script>
+<script>
+  function parse(type) {
+    return typeof type == 'string' ? JSON.parse(type) : type;
+  }
+
+  function initialize() { localStorage.unreadCount = UNKNOWN_COUNT; }
+
+  function load() {
+    BROWSER_ACTION.setBadgeBackgroundColor({color: [139, 139, 139, 255]});
+  }
+
+  function sync() {
+    if (parse(localStorage.animated)) {
+      PRETTYLOAD.start(localStorage.unreadCount);
+    }
+
+    OAUTH.sendSignedRequest(
+      SERVICE_URL.replace('*', 'www-opensocial'),
+      function(response) {
+        const RESULTS = JSON.parse(response).data.searchResults;
+        localStorage.digests = JSON.stringify(RESULTS.digests.slice(0, 20));
+        var unreadCount = RESULTS.numResults;
+
+        switch (unreadCount) {
+          case 0:
+          unreadCount = '';
+          break;
+
+          case MAX_UNREAD:
+          unreadCount = MAX_UNREAD - 1 + '+';
+          break;
+
+          default: unreadCount += '';
+        }
+
+        PRETTYLOAD.finish(localStorage.unreadCount = unreadCount);
+      },
+      {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          method: 'wave.robot.search',
+          params: {query: 'in:inbox is:unread', numResults: MAX_UNREAD}
+        })
+      }
+    );
+  }
+
+  function authorize() {
+    OAUTH.authorize(function() {
+      BROWSER_ACTION.setIcon({path: 'authorized.png'});
+      BROWSER_ACTION.setBadgeBackgroundColor({color: [85, 144, 210, 255]});
+      sync();
+      id = setInterval(sync, 60000);
+    });
+  }
+
+  const UNKNOWN_COUNT = '?';
+
+  if (!parse(localStorage.initialized)) {
+    localStorage.maxDigests = 5;
+    localStorage.animated = true;
+    initialize();
+    localStorage.participantAnnotated = true;
+    localStorage.initialized = true;
+  }
+
+  const BROWSER_ACTION = chrome.browserAction;
+  load();
+  BROWSER_ACTION.setBadgeText({text: UNKNOWN_COUNT});
+  const AUTHORIZATION_BASE = 'https://www.google.com/accounts/';
+  const UNREGISTERED_CONSUMER = 'anonymous';
+  const SERVICE_URL = 'http://*.googleusercontent.com/api/rpc';
+  const OAUTH = ChromeExOAuth.initBackgroundPage({
+    request_url: AUTHORIZATION_BASE + 'OAuthGetRequestToken',
+    authorize_url: AUTHORIZATION_BASE + 'OAuthAuthorizeToken',
+    access_url: AUTHORIZATION_BASE + 'OAuthGetAccessToken',
+    consumer_key: UNREGISTERED_CONSUMER,
+    consumer_secret: UNREGISTERED_CONSUMER,
+    scope: SERVICE_URL.replace('*', 'wave'),
+    app_name: 'Google Wave Notifier'
+  });
+  const PRETTYLOAD = new Prettyload(TRIANGLE_WAVE);
+  const MAX_UNREAD = 100;
+  var id;
+  authorize();
+</script>
